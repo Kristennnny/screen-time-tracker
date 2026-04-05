@@ -439,7 +439,7 @@ async function analyze() {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        max_tokens: 8192,
         messages: [{ role: 'user', content }]
       })
     });
@@ -451,11 +451,19 @@ async function analyze() {
 
     const data = await resp.json();
     const raw = data.content.map(b => b.text || '').join('');
-    const clean = raw.replace(/```json|```/g, '').trim();
 
+    // Try multiple strategies to extract JSON
     let parsed;
-    try { parsed = JSON.parse(clean); }
-    catch(e) {
+    const attempts = [
+      () => JSON.parse(raw.trim()),
+      () => JSON.parse(raw.replace(/```json|```/gi, '').trim()),
+      () => { const m = raw.match(/\[[\s\S]*\]/); if (m) return JSON.parse(m[0]); throw new Error(); },
+      () => { const m = raw.match(/\{[\s\S]*\}/); if (m) return JSON.parse('[' + m[0] + ']'); throw new Error(); },
+    ];
+    for (const attempt of attempts) {
+      try { parsed = attempt(); break; } catch(e) {}
+    }
+    if (!parsed) {
       document.getElementById('resultBox').style.display = 'block';
       document.getElementById('resultBox').textContent = raw;
       setStatus('AI 返回格式有误，请查看原始结果', 'error');
