@@ -438,7 +438,7 @@ async function analyze() {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         messages: [{ role: 'user', content }]
       })
@@ -452,17 +452,30 @@ async function analyze() {
     const data = await resp.json();
     const raw = data.content.map(b => b.text || '').join('');
 
-    // Try multiple strategies to extract JSON
-    let parsed;
-    const attempts = [
-      () => JSON.parse(raw.trim()),
-      () => JSON.parse(raw.replace(/```json|```/gi, '').trim()),
-      () => { const m = raw.match(/\[[\s\S]*\]/); if (m) return JSON.parse(m[0]); throw new Error(); },
-      () => { const m = raw.match(/\{[\s\S]*\}/); if (m) return JSON.parse('[' + m[0] + ']'); throw new Error(); },
-    ];
-    for (const attempt of attempts) {
-      try { parsed = attempt(); break; } catch(e) {}
+    // Detect all dates mentioned in raw response (even if truncated)
+    const mentionedDates = [...new Set([...raw.matchAll(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/g)].map(m => m[1]))];
+
+    // Extract and repair JSON from response
+    function extractJSON(str) {
+      str = str.replace(/```json|```/gi, '').trim();
+      const start = str.indexOf('[');
+      if (start !== -1) str = str.slice(start);
+      try { return JSON.parse(str); } catch(e) {}
+      const lastClose = str.lastIndexOf('}');
+      if (lastClose !== -1) {
+        try { return JSON.parse(str.slice(0, lastClose + 1) + ']'); } catch(e) {}
+      }
+      const objStart = str.indexOf('{');
+      if (objStart !== -1) {
+        const objEnd = str.lastIndexOf('}');
+        if (objEnd !== -1) {
+          try { return [JSON.parse(str.slice(objStart, objEnd + 1))]; } catch(e) {}
+        }
+      }
+      return null;
     }
+
+    const parsed = extractJSON(raw);
     if (!parsed) {
       document.getElementById('resultBox').style.display = 'block';
       document.getElementById('resultBox').textContent = raw;
@@ -482,9 +495,21 @@ async function analyze() {
     history.sort((a, b) => b.date.localeCompare(a.date));
     localStorage.setItem('st_history', JSON.stringify(history));
 
+    // Check for truncated dates
+    const missingDates = mentionedDates.filter(d => !savedDates.includes(d));
+
     document.getElementById('resultBox').style.display = 'block';
     document.getElementById('resultBox').textContent = JSON.stringify(entries, null, 2);
-    setStatus(savedDates.length > 1 ? `已保存 ${savedDates.length} 天：${savedDates.join('、')}` : `已保存 ${savedDates[0]}`, 'success');
+
+    let statusMsg = savedDates.length > 1
+      ? `已保存 ${savedDates.length} 天：${savedDates.join('、')}`
+      : `已保存 ${savedDates[0]}`;
+    if (missingDates.length > 0) {
+      statusMsg += `\n⚠️ 以下日期因回复截断未能保存：${missingDates.join('、')}，请单独重新上传这几天的截图。`;
+      setStatus(statusMsg, 'error');
+    } else {
+      setStatus(statusMsg, 'success');
+    }
     renderHistory();
     renderCharts();
     images = [];
