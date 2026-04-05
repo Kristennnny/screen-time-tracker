@@ -693,12 +693,13 @@ function renderCharts() {
   ).join('');
 
   // 3. Hourly average
+  const totalDays = sorted.length;
   const hourAvg = Array.from({length:24}, (_, hr) => {
-    const vals = sorted.map(h => {
+    const sum = sorted.reduce((s, h) => {
       const found = (h.hourly||[]).find(x=>x.hour===hr);
-      return found ? found.minutes : null;
-    }).filter(v=>v!==null);
-    return vals.length ? Math.round(vals.reduce((s,v)=>s+v,0)/vals.length) : 0;
+      return s + (found ? found.minutes : 0);
+    }, 0);
+    return Math.round(sum / totalDays);
   });
 
   const hourColors = hourAvg.map((_, i) => {
