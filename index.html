@@ -454,27 +454,6 @@ async function analyze() {
 
     // Detect all dates mentioned in raw response (even if truncated)
     const mentionedDates = [...new Set([...raw.matchAll(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/g)].map(m => m[1]))];
-
-    // Extract and repair JSON from response
-    function extractJSON(str) {
-      str = str.replace(/```json|```/gi, '').trim();
-      const start = str.indexOf('[');
-      if (start !== -1) str = str.slice(start);
-      try { return JSON.parse(str); } catch(e) {}
-      const lastClose = str.lastIndexOf('}');
-      if (lastClose !== -1) {
-        try { return JSON.parse(str.slice(0, lastClose + 1) + ']'); } catch(e) {}
-      }
-      const objStart = str.indexOf('{');
-      if (objStart !== -1) {
-        const objEnd = str.lastIndexOf('}');
-        if (objEnd !== -1) {
-          try { return [JSON.parse(str.slice(objStart, objEnd + 1))]; } catch(e) {}
-        }
-      }
-      return null;
-    }
-
     const parsed = extractJSON(raw);
     if (!parsed) {
       document.getElementById('resultBox').style.display = 'block';
@@ -518,6 +497,25 @@ async function analyze() {
     setStatus('分析失败：' + e.message, 'error');
   }
   document.getElementById('analyzeBtn').disabled = false;
+}
+
+function extractJSON(str) {
+  str = str.replace(/```json|```/gi, '').trim();
+  const start = str.indexOf('[');
+  if (start !== -1) str = str.slice(start);
+  try { return JSON.parse(str); } catch(e) {}
+  const lastClose = str.lastIndexOf('}');
+  if (lastClose !== -1) {
+    try { return JSON.parse(str.slice(0, lastClose + 1) + ']'); } catch(e) {}
+  }
+  const objStart = str.indexOf('{');
+  if (objStart !== -1) {
+    const objEnd = str.lastIndexOf('}');
+    if (objEnd !== -1) {
+      try { return [JSON.parse(str.slice(objStart, objEnd + 1))]; } catch(e) {}
+    }
+  }
+  return null;
 }
 
 function fmtMins(m) {
